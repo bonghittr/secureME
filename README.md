@@ -1,3 +1,11 @@
+#Enhanced System Hardening Script
+
+A comprehensive Linux security hardening script that transforms a standard system into a privacy-focused, security-hardened environment. SecureME implements multiple layers of security controls, network privacy features, and monitoring tools to create a robust defensive posture.
+
+#Overview
+
+SecureME automates the process of hardening Linux systems by implementing security best practices, privacy enhancements, and monitoring capabilities. It's designed to work on both systemd and legacy init systems, with intelligent detection and adaptation to the target environment.
+
 # SecureME Configuration Options
 
 ## Command Line Parameters
