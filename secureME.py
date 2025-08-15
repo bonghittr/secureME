@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os
+fimport os
 import subprocess
 import sys
 import time
@@ -366,7 +366,7 @@ def configure_firewall(ssh_port):
     run_command(f"ufw allow {ssh_port}/tcp")
 
     # Standard allowed ports
-    allowed_tcp = ["80", "443", "53", "1401", "9050", "9051", "9001", "9150", "4444", "7657"]
+    allowed_tcp = ["80", "443", "53", "1401", "9050", "9051", "5091", "1337", "22", "9001", "9150", "4444", "7657"]
     allowed_udp = ["53", "51820", "1194", "1195", "1300", "1400", "7654"]
 
     for port in allowed_tcp:
@@ -806,15 +806,13 @@ def get_args():
     parser.add_argument("--system-ipv6-disable", action="store_true", 
                        help="Disable IPv6 via GRUB (requires reboot)")
     parser.add_argument("--all", action="store_true", 
-                       help="Run all hardening except AIDE, IPv6 GRUB disable, AppArmor, and VirtualBox")
+                       help="Run all hardening except AIDE, IPv6 GRUB disable, and VirtualBox")
     parser.add_argument("--aide", action="store_true", 
                        help="Install and configure AIDE file integrity monitoring")
-    parser.add_argument("--apparmor", action="store_true", 
-                       help="Install and configure AppArmor mandatory access control")
     parser.add_argument("--virtualbox", action="store_true", 
                        help="Install VirtualBox")
     parser.add_argument("--max-all", action="store_true", 
-                       help="Install everything including VirtualBox, AIDE, and AppArmor")
+                       help="Install everything including VirtualBox and AIDE")
 
     return parser.parse_args()
 
@@ -950,13 +948,6 @@ def print_installation_summary():
             print(f"   └── {pkg}")
         print(f"   └── Launch: virtualbox")
 
-    # AppArmor
-    if 'apparmor' in installed_packages:
-        print(f"\n🛡️ APPARMOR (Mandatory Access Control):")
-        print(f"   └── Status: aa-status")
-        print(f"   └── Profiles: /etc/apparmor.d/")
-        print(f"   └── Logs: journalctl -f _TRANSPORT=kernel | grep -i apparmor")
-
     # Configuration Files
     print(f"\n{Colors.BLUE}[IMPORTANT CONFIGURATION FILES]{Colors.RESET}")
     config_files = [
@@ -969,9 +960,6 @@ def print_installation_summary():
         "/etc/default/grub - Boot security parameters",
         "/etc/ufw/user.rules - Firewall rules"
     ]
-
-    if 'apparmor' in installed_packages:
-        config_files.append("/etc/apparmor.d/ - AppArmor profiles directory")
 
     for config in config_files:
         print(f"   └── {config}")
@@ -987,11 +975,9 @@ def print_installation_summary():
         "6. Monitor system logs: journalctl -f",
         "7. Update virus definitions: freshclam",
         "8. Check intrusion attempts: fail2ban-client status sshd",
+        "9. Verify AppArmor profiles: aa-status",
         "10. Schedule regular AIDE integrity checks"
     ]
-
-    if 'apparmor' in installed_packages:
-        recommendations.insert(8, "9. Verify AppArmor profiles: aa-status")
 
     for rec in recommendations:
         print(f"   {rec}")
@@ -1073,7 +1059,13 @@ def main():
     track_package("auditd")
     track_security_feature("System Auditing", "File and system call monitoring")
 
-    # Extended hardening for --all and --max-all (AppArmor REMOVED from --all)
+    enable_apparmor(use_systemd)
+    track_package("apparmor")
+    track_package("apparmor-utils")
+    track_package("apparmor-profiles")
+    track_security_feature("AppArmor", "Mandatory access control enabled")
+
+    # Extended hardening for --all and --max-all
     if args.all or args.max_all:
         setup_mac_randomization(use_systemd)
         track_package("macchanger")
@@ -1127,14 +1119,6 @@ def main():
         setup_firejail()
         track_package("firejail")
         track_security_feature("Application Sandboxing", "Firejail security sandbox")
-
-    # AppArmor (only if specifically requested or --max-all)
-    if args.apparmor or args.max_all:
-        enable_apparmor(use_systemd)
-        track_package("apparmor")
-        track_package("apparmor-utils")
-        track_package("apparmor-profiles")
-        track_security_feature("AppArmor", "Mandatory access control enabled")
 
     # AIDE (only if specifically requested or --max-all)
     if args.aide or args.max_all:
