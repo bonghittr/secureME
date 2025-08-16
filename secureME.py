@@ -366,7 +366,7 @@ def configure_firewall(ssh_port):
     run_command(f"ufw allow {ssh_port}/tcp")
 
     # Standard allowed ports
-    allowed_tcp = ["80", "443", "53", "1401", "9050", "9051", "9001", "9150", "4444", "7657"]
+    allowed_tcp = ["80", "443", "53", "1401", "9050", "9051", "9001", "9150", "1337", "5901", "4444", "7657"]
     allowed_udp = ["53", "51820", "1194", "1195", "1300", "1400", "7654"]
 
     for port in allowed_tcp:
