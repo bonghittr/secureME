@@ -1,3 +1,4 @@
+source
 #!/usr/bin/env python3
 import os
 import subprocess
@@ -204,10 +205,9 @@ def configure_grub_security():
     log_info("Configuring GRUB with security parameters...")
     backup_config("/etc/default/grub")
 
-    # AppArmor parameters commented out since we're disabling AppArmor
     security_params = [
-        # "apparmor=1",
-        # "security=apparmor", 
+        "apparmor=1",
+        "security=apparmor", 
         "audit=1",
         "pti=on",
         "spectre_v2=on",
@@ -244,14 +244,6 @@ def randomize_hostname(use_systemd=True):
     new_hostname = f"anon-{random.randint(1000, 9999)}"
     log_info(f"Setting hostname: {new_hostname}")
 
-    # Get current hostname for replacement in /etc/hosts
-    try:
-        current_hostname = run_command("hostname", check=False).strip()
-        if not current_hostname:
-            current_hostname = "localhost"
-    except:
-        current_hostname = "localhost"
-
     if use_systemd:
         run_command(f"hostnamectl set-hostname {new_hostname}")
     else:
@@ -260,51 +252,22 @@ def randomize_hostname(use_systemd=True):
         with open("/etc/hostname", "w") as f:
             f.write(f"{new_hostname}\n")
 
-    # Always update /etc/hosts regardless of systemd or legacy
-    backup_config("/etc/hosts")
-    with open("/etc/hosts", "r") as f:
-        content = f.read()
+        # Update /etc/hosts
+        backup_config("/etc/hosts")
+        with open("/etc/hosts", "r") as f:
+            content = f.read()
 
-    # Replace hostname references in /etc/hosts
-    lines = content.split('\n')
-    new_lines = []
-    hostname_updated = False
-    
-    for line in lines:
-        if line.startswith('127.0.1.1'):
-            # Update existing 127.0.1.1 line
-            new_lines.append(f"127.0.1.1\t{new_hostname}")
-            hostname_updated = True
-        elif line.startswith('127.0.0.1'):
-            # Handle 127.0.0.1 line - replace old hostname references
-            if current_hostname in line and current_hostname != "localhost":
-                # Replace the old hostname with new one, keep localhost
-                updated_line = line.replace(current_hostname, new_hostname)
-                new_lines.append(updated_line)
-            else:
-                new_lines.append(line)
-        else:
-            # Replace any other references to the old hostname
-            if current_hostname in line and current_hostname != "localhost":
-                updated_line = line.replace(current_hostname, new_hostname)
-                new_lines.append(updated_line)
+        # Replace old hostname references
+        lines = content.split('\n')
+        new_lines = []
+        for line in lines:
+            if line.startswith('127.0.1.1'):
+                new_lines.append(f"127.0.1.1\t{new_hostname}")
             else:
                 new_lines.append(line)
 
-    # If no 127.0.1.1 entry existed, add one
-    if not hostname_updated:
-        # Find the right place to insert (after 127.0.0.1 line)
-        insert_index = 0
-        for i, line in enumerate(new_lines):
-            if line.startswith('127.0.0.1'):
-                insert_index = i + 1
-                break
-        new_lines.insert(insert_index, f"127.0.1.1\t{new_hostname}")
-
-    with open("/etc/hosts", "w") as f:
-        f.write('\n'.join(new_lines))
-    
-    log_info(f"Updated /etc/hosts with new hostname: {new_hostname}")
+        with open("/etc/hosts", "w") as f:
+            f.write('\n'.join(new_lines))
 
 def detect_ssh_service(use_systemd=True):
     """Detect the correct SSH service name on this system."""
@@ -340,7 +303,6 @@ def configure_ssh(port, use_systemd=True):
     sshd = "/etc/ssh/sshd_config"
     backup_config(sshd)
 
-    # Modified SSH config to allow both password and key authentication
     ssh_config = f"""
 # Enhanced SSH Security Configuration
 Port {port}
@@ -349,15 +311,15 @@ HostKey /etc/ssh/ssh_host_rsa_key
 HostKey /etc/ssh/ssh_host_ecdsa_key
 HostKey /etc/ssh/ssh_host_ed25519_key
 
-# Authentication - MODIFIED to allow both password and key auth
+# Authentication
 PermitRootLogin no
-PasswordAuthentication yes
+PasswordAuthentication no
 PubkeyAuthentication yes
 AuthorizedKeysFile %h/.ssh/authorized_keys
 ChallengeResponseAuthentication no
 KerberosAuthentication no
 GSSAPIAuthentication no
-UsePAM yes
+UsePAM no
 
 # Security settings
 X11Forwarding no
@@ -392,7 +354,7 @@ LogLevel VERBOSE
     run_command("chmod 600 /etc/ssh/sshd_config")
     service_restart(ssh_service, use_systemd)
     service_enable(ssh_service, use_systemd)
-    log_info(f"SSH service ({ssh_service}) configured and enabled with password + key authentication")
+    log_info(f"SSH service ({ssh_service}) configured and enabled")
 
 def configure_firewall(ssh_port):
     log_info("Configuring UFW firewall with enhanced rules...")
@@ -405,7 +367,7 @@ def configure_firewall(ssh_port):
     run_command(f"ufw allow {ssh_port}/tcp")
 
     # Standard allowed ports
-    allowed_tcp = ["80", "443", "53", "1401", "9050", "9051", "9001", "9150", "1337", "5901", "4444", "7657"]
+    allowed_tcp = ["80", "443", "53", "1401", "9050", "9051", "9001", "9150", "4444", "7657"]
     allowed_udp = ["53", "51820", "1194", "1195", "1300", "1400", "7654"]
 
     for port in allowed_tcp:
@@ -823,15 +785,14 @@ def setup_auditd(use_systemd=True):
     service_enable("auditd", use_systemd)
     service_restart("auditd", use_systemd)
 
-# AppArmor functions commented out
-# def enable_apparmor(use_systemd=True):
-#     log_info("Enabling and configuring AppArmor...")
-#     run_command("apt-get install -y apparmor apparmor-utils apparmor-profiles")
-#     service_enable("apparmor", use_systemd)
-#     service_start("apparmor", use_systemd)
-# 
-#     # Enable additional profiles
-#     run_command("aa-enforce /etc/apparmor.d/*", check=False)
+def enable_apparmor(use_systemd=True):
+    log_info("Enabling and configuring AppArmor...")
+    run_command("apt-get install -y apparmor apparmor-utils apparmor-profiles")
+    service_enable("apparmor", use_systemd)
+    service_start("apparmor", use_systemd)
+
+    # Enable additional profiles
+    run_command("aa-enforce /etc/apparmor.d/*", check=False)
 
 def setup_firejail():
     log_info("Installing Firejail for application sandboxing...")
@@ -849,9 +810,6 @@ def get_args():
                        help="Run all hardening except AIDE, IPv6 GRUB disable, and VirtualBox")
     parser.add_argument("--aide", action="store_true", 
                        help="Install and configure AIDE file integrity monitoring")
-    # AppArmor argument commented out
-    # parser.add_argument("--apparmor", action="store_true", 
-    #                    help="Install and configure AppArmor mandatory access control")
     parser.add_argument("--virtualbox", action="store_true", 
                        help="Install VirtualBox")
     parser.add_argument("--max-all", action="store_true", 
@@ -924,7 +882,7 @@ def print_installation_summary():
     print(f"📡 SSH ACCESS:")
     print(f"   └── Connect: ssh -p {ssh_port} username@hostname")
     print(f"   └── Config: /etc/ssh/sshd_config")
-    print(f"   └── Security: Both password and key authentication enabled")
+    print(f"   └── Security: Password auth disabled, key-based only")
 
     # Tor Instructions
     if 'tor' in network_services:
@@ -959,8 +917,7 @@ def print_installation_summary():
         'lynis': 'Security Audit - Run: lynis audit system',
         'aide': 'File Integrity - Check: aide --check',
         'auditd': 'System Auditing - Logs: /var/log/audit/',
-        # AppArmor commented out
-        # 'apparmor': 'Mandatory Access Control - Status: aa-status'
+        'apparmor': 'Mandatory Access Control - Status: aa-status'
     }
 
     installed_security_tools = [pkg for pkg in installed_packages if pkg in security_tools_info.keys()]
@@ -992,13 +949,6 @@ def print_installation_summary():
             print(f"   └── {pkg}")
         print(f"   └── Launch: virtualbox")
 
-    # AppArmor section commented out
-    # if 'apparmor' in installed_packages:
-    #     print(f"\n🛡️ APPARMOR (Mandatory Access Control):")
-    #     print(f"   └── Status: aa-status")
-    #     print(f"   └── Profiles: /etc/apparmor.d/")
-    #     print(f"   └── Logs: journalctl -f _TRANSPORT=kernel | grep -i apparmor")
-
     # Configuration Files
     print(f"\n{Colors.BLUE}[IMPORTANT CONFIGURATION FILES]{Colors.RESET}")
     config_files = [
@@ -1011,10 +961,6 @@ def print_installation_summary():
         "/etc/default/grub - Boot security parameters",
         "/etc/ufw/user.rules - Firewall rules"
     ]
-
-    # AppArmor config commented out
-    # if 'apparmor' in installed_packages:
-    #     config_files.append("/etc/apparmor.d/ - AppArmor profiles directory")
 
     for config in config_files:
         print(f"   └── {config}")
@@ -1030,12 +976,9 @@ def print_installation_summary():
         "6. Monitor system logs: journalctl -f",
         "7. Update virus definitions: freshclam",
         "8. Check intrusion attempts: fail2ban-client status sshd",
-        "9. Schedule regular AIDE integrity checks"
+        "9. Verify AppArmor profiles: aa-status",
+        "10. Schedule regular AIDE integrity checks"
     ]
-
-    # AppArmor recommendation commented out
-    # if 'apparmor' in installed_packages:
-    #     recommendations.insert(8, "9. Verify AppArmor profiles: aa-status")
 
     for rec in recommendations:
         print(f"   {rec}")
@@ -1095,8 +1038,8 @@ def main():
 
     configure_ssh(ssh_port, use_systemd)
     track_package("openssh-server")
-    track_service("ssh", ssh_port, "TCP", "SSH server with password+key auth")
-    track_security_feature("SSH Configuration", f"SSH on port {ssh_port} with password and key authentication")
+    track_service("ssh", ssh_port, "TCP", "Hardened SSH server")
+    track_security_feature("SSH Hardening", f"Secure SSH on port {ssh_port}")
 
     configure_firewall(ssh_port)
     track_package("ufw")
@@ -1117,7 +1060,13 @@ def main():
     track_package("auditd")
     track_security_feature("System Auditing", "File and system call monitoring")
 
-    # Extended hardening for --all and --max-all (AppArmor removed from both)
+    enable_apparmor(use_systemd)
+    track_package("apparmor")
+    track_package("apparmor-utils")
+    track_package("apparmor-profiles")
+    track_security_feature("AppArmor", "Mandatory access control enabled")
+
+    # Extended hardening for --all and --max-all
     if args.all or args.max_all:
         setup_mac_randomization(use_systemd)
         track_package("macchanger")
@@ -1171,14 +1120,6 @@ def main():
         setup_firejail()
         track_package("firejail")
         track_security_feature("Application Sandboxing", "Firejail security sandbox")
-
-    # AppArmor section completely commented out
-    # if args.apparmor or args.max_all:
-    #     enable_apparmor(use_systemd)
-    #     track_package("apparmor")
-    #     track_package("apparmor-utils")
-    #     track_package("apparmor-profiles")
-    #     track_security_feature("AppArmor", "Mandatory access control enabled")
 
     # AIDE (only if specifically requested or --max-all)
     if args.aide or args.max_all:
