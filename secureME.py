@@ -244,6 +244,14 @@ def randomize_hostname(use_systemd=True):
     new_hostname = f"anon-{random.randint(1000, 9999)}"
     log_info(f"Setting hostname: {new_hostname}")
 
+    # Get current hostname for replacement in /etc/hosts
+    try:
+        current_hostname = run_command("hostname", check=False).strip()
+        if not current_hostname:
+            current_hostname = "localhost"
+    except:
+        current_hostname = "localhost"
+
     if use_systemd:
         run_command(f"hostnamectl set-hostname {new_hostname}")
     else:
@@ -252,22 +260,51 @@ def randomize_hostname(use_systemd=True):
         with open("/etc/hostname", "w") as f:
             f.write(f"{new_hostname}\n")
 
-        # Update /etc/hosts
-        backup_config("/etc/hosts")
-        with open("/etc/hosts", "r") as f:
-            content = f.read()
+    # Always update /etc/hosts regardless of systemd or legacy
+    backup_config("/etc/hosts")
+    with open("/etc/hosts", "r") as f:
+        content = f.read()
 
-        # Replace old hostname references
-        lines = content.split('\n')
-        new_lines = []
-        for line in lines:
-            if line.startswith('127.0.1.1'):
-                new_lines.append(f"127.0.1.1\t{new_hostname}")
+    # Replace hostname references in /etc/hosts
+    lines = content.split('\n')
+    new_lines = []
+    hostname_updated = False
+    
+    for line in lines:
+        if line.startswith('127.0.1.1'):
+            # Update existing 127.0.1.1 line
+            new_lines.append(f"127.0.1.1\t{new_hostname}")
+            hostname_updated = True
+        elif line.startswith('127.0.0.1'):
+            # Handle 127.0.0.1 line - replace old hostname references
+            if current_hostname in line and current_hostname != "localhost":
+                # Replace the old hostname with new one, keep localhost
+                updated_line = line.replace(current_hostname, new_hostname)
+                new_lines.append(updated_line)
+            else:
+                new_lines.append(line)
+        else:
+            # Replace any other references to the old hostname
+            if current_hostname in line and current_hostname != "localhost":
+                updated_line = line.replace(current_hostname, new_hostname)
+                new_lines.append(updated_line)
             else:
                 new_lines.append(line)
 
-        with open("/etc/hosts", "w") as f:
-            f.write('\n'.join(new_lines))
+    # If no 127.0.1.1 entry existed, add one
+    if not hostname_updated:
+        # Find the right place to insert (after 127.0.0.1 line)
+        insert_index = 0
+        for i, line in enumerate(new_lines):
+            if line.startswith('127.0.0.1'):
+                insert_index = i + 1
+                break
+        new_lines.insert(insert_index, f"127.0.1.1\t{new_hostname}")
+
+    with open("/etc/hosts", "w") as f:
+        f.write('\n'.join(new_lines))
+    
+    log_info(f"Updated /etc/hosts with new hostname: {new_hostname}")
 
 def detect_ssh_service(use_systemd=True):
     """Detect the correct SSH service name on this system."""
